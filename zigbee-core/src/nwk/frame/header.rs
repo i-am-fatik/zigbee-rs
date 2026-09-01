@@ -63,7 +63,7 @@ impl_byte! {
         /// the originator.
         ///
         /// See Section 3.3.1.9.2.
-        #[ctx = byte::ctx::Bytes::Len(relay_count as usize)]
+        #[ctx = byte::ctx::Bytes::Len(relay_count as usize * 2)]
         #[ctx_write = ()]
         pub relay_list: &'a [u8],
     }
