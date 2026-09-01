@@ -182,13 +182,13 @@ pub enum MacError {
     NoData,
     #[error("no acknowledgment received")]
     NoAck,
-    #[cfg(feature = "esp32c6")]
+    #[cfg(any(feature = "esp32c6", feature = "esp32h2"))]
     #[error("transmit failed (no ack, channel busy or coex abort)")]
     TxFailed,
-    #[cfg(feature = "esp32c6")]
+    #[cfg(any(feature = "esp32c6", feature = "esp32h2"))]
     #[error("transmit-done signal timed out")]
     TxTimeout,
-    #[cfg(feature = "esp32c6")]
+    #[cfg(any(feature = "esp32c6", feature = "esp32h2"))]
     #[error("radio error")]
     RadioError(#[from] esp_radio::ieee802154::Error),
 }
