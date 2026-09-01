@@ -182,9 +182,7 @@ impl BaseDeviceBehavior {
         // BDB 7.1 step 4: rejoin on the current channel, so no scan channels
         log::debug!("[BDB] step 4: attempt NWK rejoin");
         let remembered_extended_pan_id = IeeeAddress(*nib.extended_panid());
-        let confirm = device
-            .rejoin(remembered_extended_pan_id, 0..0, 0)
-            .await?;
+        let confirm = device.rejoin(remembered_extended_pan_id, 0..0, 0).await?;
 
         // BDB 7.1 step 5
         if confirm.status == NlmeJoinStatus::Success {
