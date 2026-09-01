@@ -51,10 +51,21 @@ const POLL_DATA_RETRIES: u8 = 5;
 const ACK_ON_AIR_BEFORE_DRAIN_US: u64 = 2000;
 
 // exponential backoff with jitter so a retry does not land in the same
-// collision as the attempt it repeats
+// collision as the attempt it repeats. the window has to outlast a parent
+// that is forwarding the frame it just accepted from us, which takes it
+// tens of milliseconds when its own hop needs retries
+const RETRY_BACKOFF_BASE_US: u64 = 5_000;
+const RETRY_JITTER_MASK: u32 = 0x0fff;
+
+// a parent that is still forwarding the frame it just took from us, or
+// answering the coordinator's questions after our announce, ignores a whole
+// round of retries; one more round after a pause covers it
+const TRANSMIT_ROUNDS: u8 = 2;
+const PARENT_BUSY_PAUSE_MS: u64 = 80;
+
 fn retry_backoff_us(attempt: u8) -> u64 {
-    let jitter = (esp_hal::rng::Rng::new().random() & 0x3ff) as u64;
-    (1000u64 << attempt) + jitter
+    let jitter = (esp_hal::rng::Rng::new().random() & RETRY_JITTER_MASK) as u64;
+    (RETRY_BACKOFF_BASE_US << attempt) + jitter
 }
 
 /// ESP32-C6 [`Mlme`] implementation.
@@ -106,18 +117,23 @@ impl EspMlmeInner<'_> {
     // the first attempt, and the last one skips the clear channel assessment
     // because a busy neighbourhood otherwise refuses every attempt
     async fn transmit_acked(&mut self, frame: &[u8]) -> Result<(), MacError> {
-        for attempt in 0..=A_MAX_FRAME_RETRIES {
-            let last_attempt = attempt == A_MAX_FRAME_RETRIES;
-            match self.driver.transmit(frame, !last_attempt).await {
-                Ok(()) if self.driver.last_tx_acked() => return Ok(()),
-                Ok(()) => {}
-                // no ack / channel busy: retransmit (7.5.6.4)
-                Err(MacError::TxFailed) => {}
-                // a lost radio interrupt: retry rather than wedge the caller
-                Err(MacError::TxTimeout) => log::warn!("[MLME] tx-done timeout, retrying"),
-                Err(e) => return Err(e),
+        for round in 0..TRANSMIT_ROUNDS {
+            if round > 0 {
+                Timer::after_millis(PARENT_BUSY_PAUSE_MS).await;
             }
-            Timer::after_micros(retry_backoff_us(attempt)).await;
+            for attempt in 0..=A_MAX_FRAME_RETRIES {
+                let last_attempt = attempt == A_MAX_FRAME_RETRIES;
+                match self.driver.transmit(frame, !last_attempt).await {
+                    Ok(()) if self.driver.last_tx_acked() => return Ok(()),
+                    Ok(()) => {}
+                    // no ack / channel busy: retransmit (7.5.6.4)
+                    Err(MacError::TxFailed) => {}
+                    // a lost radio interrupt: retry rather than wedge the caller
+                    Err(MacError::TxTimeout) => log::warn!("[MLME] tx-done timeout, retrying"),
+                    Err(e) => return Err(e),
+                }
+                Timer::after_micros(retry_backoff_us(attempt)).await;
+            }
         }
         Err(MacError::NoAck)
     }
