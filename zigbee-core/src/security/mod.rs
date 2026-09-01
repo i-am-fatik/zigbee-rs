@@ -53,6 +53,12 @@ pub mod frame;
 pub mod primitives;
 
 /// Default ZigbeeAlliance09 centralized security global trust center link key
+/// Where the outgoing NWK frame counter of a freshly installed network key
+/// starts. Neighbors keep the highest counter they accepted from an address
+/// and reject anything below it, so a device that lost its counters must
+/// come back above whatever it used before.
+pub const INITIAL_OUTGOING_FRAME_COUNTER: u32 = 0x0100_0000;
+
 pub const TRUST_CENTER_LINK_KEY: [u8; 16] = [
     0x5a, 0x69, 0x67, 0x42, 0x65, 0x65, 0x41, 0x6c, 0x6c, 0x69, 0x61, 0x6e, 0x63, 0x65, 0x30, 0x39,
 ];

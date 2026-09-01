@@ -742,7 +742,7 @@ fn install_alternate_network_key(nib: &Nib, descriptor: &StandardNetworkKeyDescr
     let active = *nib.active_key_seq_number();
     let material = NetworkSecurityMaterialDescriptor {
         key_seq_number: descriptor.sequence_number,
-        outgoing_frame_counter: 0,
+        outgoing_frame_counter: crate::security::INITIAL_OUTGOING_FRAME_COUNTER,
         incoming_frame_counter_set: StorageVec::new(),
         key: descriptor.key,
         network_key_type: STANDARD_NETWORK_KEY,

@@ -515,7 +515,7 @@ impl<M: Mlme> ZigbeeDevice<M> {
                     sec_material.clear();
                     let _ = sec_material.push(NetworkSecurityMaterialDescriptor {
                         key_seq_number: nwk_key.sequence_number,
-                        outgoing_frame_counter: 0,
+                        outgoing_frame_counter: crate::security::INITIAL_OUTGOING_FRAME_COUNTER,
                         incoming_frame_counter_set: StorageVec::new(),
                         key: nwk_key.key,
                         network_key_type: 0x01,
