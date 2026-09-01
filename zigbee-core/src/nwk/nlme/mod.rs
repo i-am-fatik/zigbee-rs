@@ -728,9 +728,15 @@ where
             .map(|(i, _)| i)
             .collect();
 
-        // nwkStackProfile == 1 prefers minimum depth (3.6.1.4.1.1)
+        // nwkStackProfile == 1 prefers minimum depth (3.6.1.4.1.1); every
+        // other profile leaves the choice open, and the best link first with
+        // depth as the tie-break keeps the device off a marginal router that
+        // merely answered the beacon request first
         if *stack_profile == 1 {
             candidates.sort_unstable_by_key(|&i| table[i].depth);
+        } else {
+            candidates
+                .sort_unstable_by_key(|&i| (link_cost_from_lqi(table[i].lqi), table[i].depth));
         }
 
         candidates
@@ -1357,6 +1363,12 @@ where
             let channel = neighbor.logical_channel;
             let pan_id = PanId(neighbor.pan_id);
             let dest = Address::Short(pan_id, MacShortAddress(neighbor.network_address.0));
+            log::info!(
+                "[NWK-JOIN] parent candidate {:#06x} at depth {} with lqi {}",
+                neighbor.network_address.0,
+                neighbor.depth,
+                neighbor.lqi
+            );
             drop(table);
 
             match self.mac.associate(channel, dest, mac_caps).await {
