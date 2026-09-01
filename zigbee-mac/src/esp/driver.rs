@@ -27,6 +27,18 @@ static RX_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // tx-done and tx-failed wired means a genuinely lost interrupt
 const TX_DONE_TIMEOUT_MS: u64 = 250;
 
+// the receiver decodes frames down to about -100 dBm and anything above -40 dBm
+// is as good as it gets, so link quality spans that range; esp-radio's own
+// conversion reports zero for everything below -80 dBm, which the NWK layer
+// reads as an unusable parent while such links carry traffic without loss
+const WEAKEST_RSSI_DBM: i32 = -100;
+const STRONGEST_RSSI_DBM: i32 = -40;
+
+pub(crate) fn link_quality(rssi: i8) -> u8 {
+    let clamped = (rssi as i32).clamp(WEAKEST_RSSI_DBM, STRONGEST_RSSI_DBM);
+    ((clamped - WEAKEST_RSSI_DBM) * 255 / (STRONGEST_RSSI_DBM - WEAKEST_RSSI_DBM)) as u8
+}
+
 // inserts 0xFF, 0xFE after the OUI per the IEEE EUI-64 conversion convention:
 // AA:BB:CC:DD:EE:FF -> AA:BB:CC:FF:FE:DD:EE:FF
 fn eui48_to_eui64(mac: [u8; 6]) -> u64 {
@@ -144,7 +156,11 @@ impl<'a> Ieee802154Driver<'a> {
 
     /// Poll the hardware RX queue for one frame (non-blocking).
     pub fn poll_received(&mut self) -> Option<Result<ReceivedFrame, Ieee802154Error>> {
-        self.driver.received()
+        let received = self.driver.received()?;
+        Some(received.map(|mut frame| {
+            frame.lqi = link_quality(frame.rssi);
+            frame
+        }))
     }
 
     /// Clear the RX-available signal. Call this *before* draining the queue so
