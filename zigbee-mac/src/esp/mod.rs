@@ -46,6 +46,17 @@ const ASSOCIATE_POLL_RETRIES: u8 = 5;
 // number of poll rounds per steady-state MLME-POLL before reporting no data
 const POLL_DATA_RETRIES: u8 = 5;
 
+// draining the RX queue re-arms the receiver, which aborts a frame still on
+// the air; the frame that raised the signal may still be being acknowledged
+const ACK_ON_AIR_BEFORE_DRAIN_US: u64 = 2000;
+
+// exponential backoff with jitter so a retry does not land in the same
+// collision as the attempt it repeats
+fn retry_backoff_us(attempt: u8) -> u64 {
+    let jitter = (esp_hal::rng::Rng::new().random() & 0x3ff) as u64;
+    (1000u64 << attempt) + jitter
+}
+
 /// ESP32-C6 [`Mlme`] implementation.
 ///
 /// The radio is a single shared resource: the inner state is held behind an
@@ -90,10 +101,14 @@ impl EspMlmeInner<'_> {
     }
 
     // retransmits up to aMaxFrameRetries times if unacknowledged (IEEE 802.15.4
-    // 7.5.6.4); returns MacError::NoAck if every attempt goes unacknowledged
+    // 7.5.6.4); returns MacError::NoAck if every attempt goes unacknowledged.
+    // retries back off so they do not collide with the traffic that refused
+    // the first attempt, and the last one skips the clear channel assessment
+    // because a busy neighbourhood otherwise refuses every attempt
     async fn transmit_acked(&mut self, frame: &[u8]) -> Result<(), MacError> {
-        for _ in 0..=A_MAX_FRAME_RETRIES {
-            match self.driver.transmit(frame).await {
+        for attempt in 0..=A_MAX_FRAME_RETRIES {
+            let last_attempt = attempt == A_MAX_FRAME_RETRIES;
+            match self.driver.transmit(frame, !last_attempt).await {
                 Ok(()) if self.driver.last_tx_acked() => return Ok(()),
                 Ok(()) => {}
                 // no ack / channel busy: retransmit (7.5.6.4)
@@ -102,6 +117,7 @@ impl EspMlmeInner<'_> {
                 Err(MacError::TxTimeout) => log::warn!("[MLME] tx-done timeout, retrying"),
                 Err(e) => return Err(e),
             }
+            Timer::after_micros(retry_backoff_us(attempt)).await;
         }
         Err(MacError::NoAck)
     }
@@ -157,7 +173,7 @@ impl EspMlmeInner<'_> {
         self.driver.start_receive();
 
         let frame = self.beacon_request_frame();
-        if let Err(e) = self.driver.transmit(&frame).await {
+        if let Err(e) = self.driver.transmit(&frame, true).await {
             log::error!("[MLME-SCAN]: error transmitting beacon: {e}");
         }
 
@@ -637,7 +653,7 @@ impl EspMlmeInner<'_> {
         // not drop a ZDO/APS response — the coordinator treats the silence as
         // an interview failure
         if is_broadcast {
-            self.driver.transmit(&frame_buf[..total_len]).await?;
+            self.driver.transmit(&frame_buf[..total_len], true).await?;
         } else {
             self.transmit_acked(&frame_buf[..total_len]).await?;
         }
@@ -725,6 +741,7 @@ impl Mlme for EspMlme<'_> {
                 }
             }
             driver::wait_rx_signal().await;
+            Timer::after_micros(ACK_ON_AIR_BEFORE_DRAIN_US).await;
         }
     }
 

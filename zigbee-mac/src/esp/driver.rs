@@ -113,9 +113,9 @@ impl<'a> Ieee802154Driver<'a> {
     /// For an acknowledgment-requested frame tx-done fires only once the ACK is
     /// received, so [`Self::last_tx_acked`] is valid on `Ok`. Returns
     /// [`MacError::TxFailed`] on no-ACK, CCA-busy or a coex abort.
-    pub async fn transmit(&mut self, frame: &[u8]) -> Result<(), MacError> {
+    pub async fn transmit(&mut self, frame: &[u8], cca: bool) -> Result<(), MacError> {
         TX_SIGNAL.reset();
-        self.driver.transmit_raw(frame, true)?;
+        self.driver.transmit_raw(frame, cca)?;
         // bound the wait: a lost interrupt would otherwise block here forever
         // while holding the radio lock, wedging the whole stack
         match select(Timer::after_millis(TX_DONE_TIMEOUT_MS), TX_SIGNAL.wait()).await {
