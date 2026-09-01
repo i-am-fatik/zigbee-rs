@@ -488,7 +488,7 @@ impl<M: Mlme> ZigbeeDevice<M> {
 
         match transport_key {
             TransportKey::StandardNetworkKey(nwk_key) => {
-                log::debug!("[ZDO] received network key {:02x?}", nwk_key.key);
+                log::debug!("[ZDO] received network key, sequence {}", nwk_key.sequence_number);
 
                 let aib = aib::get_ref();
                 aib.update_trust_center_address(|value| *value = nwk_key.source_address);
